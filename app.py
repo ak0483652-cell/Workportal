@@ -15,7 +15,443 @@ from werkzeug.security import generate_password_hash, check_password_hash
 BASE = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE, "data.db")
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder=None)
+
+
+# ---- all HTML pages and CSS live inside this file (no templates/static folders needed) ----
+TEMPLATES = {
+    'admin_home.html': '''{% extends "base.html" %}
+{% block title %}Admin{% endblock %}
+{% block body %}
+<h1>Admin panel</h1>
+<div class="grid">
+  <div class="card stat"><div class="n">{{ stats.users }}</div><div class="t">Users</div></div>
+  <div class="card stat"><div class="n">{{ stats.balance|money }}</div><div class="t">Total user balances (you owe)</div></div>
+  <a class="card stat work" href="{{ url_for('admin_submissions') }}"><div class="n">{{ stats.pending_subs }}</div><div class="t">Submissions to review</div></a>
+  <a class="card stat work" href="{{ url_for('admin_withdrawals') }}"><div class="n">{{ stats.pending_wd }} ({{ stats.pending_wd_amt|money }})</div><div class="t">Pending withdrawals</div></a>
+  <div class="card stat"><div class="n">{{ stats.paid|money }}</div><div class="t">Total paid out</div></div>
+</div>
+<h2>Quick actions</h2>
+<div class="row">
+  <a class="btn" href="{{ url_for('admin_tasks') }}">Create / assign work</a>
+  <a class="btn sec" href="{{ url_for('admin_users') }}">Manage users</a>
+  <a class="btn sec" href="{{ url_for('admin_settings') }}">Rates &amp; names</a>
+</div>
+{% endblock %}
+''',
+    'admin_settings.html': '''{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block body %}
+<h1>Settings</h1>
+<div class="card">
+<form method="post">{{ csrf() }}
+  <label>Site name</label><input name="site_name" value="{{ vals.site_name }}">
+  <div class="row">
+    <div><label>Work 1 name</label><input name="cat1_name" value="{{ vals.cat1_name }}"></div>
+    <div><label>Work 2 name</label><input name="cat2_name" value="{{ vals.cat2_name }}"></div>
+    <div><label>Work 3 name</label><input name="cat3_name" value="{{ vals.cat3_name }}"></div>
+    <div><label>Work 4 name</label><input name="cat4_name" value="{{ vals.cat4_name }}"></div>
+  </div>
+  <div class="row">
+    <div><label>Pay per correct captcha (₹)</label><input name="captcha_rate" type="number" step="0.01" min="0" value="{{ vals.captcha_rate }}"></div>
+    <div><label>Max captchas per user per day</label><input name="captcha_daily_limit" type="number" min="0" value="{{ vals.captcha_daily_limit }}"></div>
+    <div><label>Minimum withdrawal (₹)</label><input name="min_withdrawal" type="number" step="1" min="1" value="{{ vals.min_withdrawal }}"></div>
+  </div>
+  <p><button>Save settings</button></p>
+</form>
+</div>
+{% endblock %}
+''',
+    'admin_subs.html': '''{% extends "base.html" %}
+{% block title %}Review submissions{% endblock %}
+{% block body %}
+<h1>Submissions to review</h1>
+{% for s in subs %}
+<div class="card">
+  <div class="row" style="align-items:center">
+    <div><b>{{ s['title'] }}</b><br><span class="mut">{{ cat_names[s['category']] }} &middot; by {{ s['username'] }} &middot; {{ s['created_at'] }}</span></div>
+    <div><b>Reward:</b> {{ s['reward']|money }}</div>
+  </div>
+  <p><pre>{{ s['answer'] }}</pre></p>
+  <div class="row" style="max-width:340px">
+    <form method="post">{{ csrf() }}<input type="hidden" name="id" value="{{ s['id'] }}"><input type="hidden" name="decision" value="approved"><button class="btn ok">Approve &amp; pay</button></form>
+    <form method="post">{{ csrf() }}<input type="hidden" name="id" value="{{ s['id'] }}"><input type="hidden" name="decision" value="rejected"><button class="btn bad">Reject</button></form>
+  </div>
+</div>
+{% else %}
+<div class="card"><p class="mut">Nothing pending. All caught up.</p></div>
+{% endfor %}
+{% endblock %}
+''',
+    'admin_tasks.html': '''{% extends "base.html" %}
+{% block title %}Tasks{% endblock %}
+{% block body %}
+<h1>Create &amp; assign work</h1>
+<div class="card">
+  <form method="post">{{ csrf() }}<input type="hidden" name="action" value="create">
+    <div class="row">
+      <div><label>Dashboard</label>
+        <select name="category">{% for i in (2,3,4) %}<option value="{{ i }}">{{ cat_names[i] }}</option>{% endfor %}</select></div>
+      <div><label>Reward (₹)</label><input name="reward" type="number" step="0.01" min="0.01" required></div>
+      <div><label>Assign to username (blank = everyone)</label><input name="assigned_to" placeholder="e.g. rahul123"></div>
+      <div><label>Copies (for everyone)</label><input name="copies" type="number" min="1" max="200" value="1"></div>
+    </div>
+    <label>Title</label><input name="title" required>
+    <label>Instructions</label><textarea name="description" required></textarea>
+    <p><button>Create task</button></p>
+  </form>
+  <p class="mut">Work 1 is the automatic captcha dashboard; its rate is set in Settings. "Copies" lets many users each get their own copy of an everyone-task.</p>
+</div>
+
+<h2>All tasks</h2>
+<div class="card"><table>
+<tr><th>#</th><th>Dashboard</th><th>Title</th><th>Reward</th><th>For</th><th>Subs</th><th></th></tr>
+{% for t in tasks %}<tr>
+<td>{{ t['id'] }}</td><td>{{ cat_names[t['category']] }}</td><td>{{ t['title'] }}</td><td>{{ t['reward']|money }}</td>
+<td>{{ t['assignee'] or 'Everyone' }}</td><td>{{ t['subs'] }}</td>
+<td><form method="post">{{ csrf() }}<input type="hidden" name="action" value="toggle"><input type="hidden" name="id" value="{{ t['id'] }}">
+<button class="btn sm {{ 'sec' if t['active'] else 'ok' }}">{{ 'Disable' if t['active'] else 'Enable' }}</button></form></td></tr>
+{% else %}<tr><td colspan="7" class="mut">No tasks yet.</td></tr>{% endfor %}
+</table></div>
+{% endblock %}
+''',
+    'admin_user.html': '''{% extends "base.html" %}
+{% block title %}{{ u['username'] }}{% endblock %}
+{% block body %}
+<h1>{{ u['name'] }} <span class="mut">({{ u['username'] }})</span></h1>
+<div class="grid">
+  <div class="card stat"><div class="n">{{ u['balance']|money }}</div><div class="t">Balance &middot; UPI: {{ u['upi_id'] or 'not set' }}</div></div>
+  <div class="card">
+    <b>Adjust balance</b>
+    <form method="post">{{ csrf() }}<input type="hidden" name="action" value="adjust">
+      <div class="row"><select name="sign"><option value="add">Add</option><option value="sub">Deduct</option></select>
+      <input name="amount" type="number" step="0.01" min="0.01" placeholder="Amount" required></div>
+      <input name="note" placeholder="Note (optional)" style="margin-top:8px">
+      <p><button>Apply</button></p>
+    </form>
+  </div>
+  <div class="card">
+    <b>Account</b>
+    <form method="post" style="margin-bottom:12px">{{ csrf() }}<input type="hidden" name="action" value="block">
+      <p><button class="btn {{ 'ok' if u['is_blocked'] else 'bad' }}">{{ 'Unblock user' if u['is_blocked'] else 'Block user' }}</button></p></form>
+    <form method="post">{{ csrf() }}<input type="hidden" name="action" value="password">
+      <input name="password" type="text" placeholder="New password (min 6)" required>
+      <p><button class="btn sec">Reset password</button></p></form>
+  </div>
+</div>
+
+<h2>Recent transactions</h2>
+<div class="card"><table><tr><th>When</th><th>Type</th><th>Note</th><th>Amount</th></tr>
+{% for t in txns %}<tr><td class="mut">{{ t['created_at'] }}</td><td>{{ t['kind'] }}</td><td>{{ t['note'] }}</td>
+<td class="{{ 'pos' if t['amount']>0 else 'neg' }}">{{ t['amount']|money }}</td></tr>
+{% else %}<tr><td colspan="4" class="mut">None.</td></tr>{% endfor %}</table></div>
+
+<h2>Recent submissions</h2>
+<div class="card"><table><tr><th>Task</th><th>Status</th><th>When</th></tr>
+{% for s in subs %}<tr><td>{{ s['title'] }}</td><td><span class="pill {{ s['status'] }}">{{ s['status'] }}</span></td><td class="mut">{{ s['created_at'] }}</td></tr>
+{% else %}<tr><td colspan="3" class="mut">None.</td></tr>{% endfor %}</table></div>
+<p><a href="{{ url_for('admin_users') }}">&larr; All users</a></p>
+{% endblock %}
+''',
+    'admin_users.html': '''{% extends "base.html" %}
+{% block title %}Users{% endblock %}
+{% block body %}
+<h1>Users</h1>
+<form method="get" class="row" style="margin-bottom:14px"><input name="q" value="{{ search }}" placeholder="Search username or name"><button>Search</button></form>
+<div class="card">
+<table><tr><th>Username</th><th>Name</th><th>UPI</th><th>Balance</th><th>Status</th><th></th></tr>
+{% for u in users %}<tr>
+<td>{{ u['username'] }}</td><td>{{ u['name'] }}</td><td>{{ u['upi_id'] }}</td><td>{{ u['balance']|money }}</td>
+<td>{% if u['is_blocked'] %}<span class="pill rejected">blocked</span>{% else %}<span class="pill approved">active</span>{% endif %}</td>
+<td><a class="btn sm sec" href="{{ url_for('admin_user', uid=u['id']) }}">Manage</a></td></tr>
+{% else %}<tr><td colspan="6" class="mut">No users found.</td></tr>{% endfor %}
+</table>
+</div>
+{% endblock %}
+''',
+    'admin_wd.html': '''{% extends "base.html" %}
+{% block title %}Withdrawals{% endblock %}
+{% block body %}
+<h1>Withdrawals</h1>
+<p><a class="btn sm {{ '' if show=='pending' else 'sec' }}" href="?show=pending">Pending</a>
+   <a class="btn sm {{ '' if show=='all' else 'sec' }}" href="?show=all">All</a></p>
+<p class="mut">Pay the UPI ID shown from your own UPI app first, then click "Mark paid". "Reject" refunds the amount to the user's wallet.</p>
+{% for w in wds %}
+<div class="card">
+  <div class="row" style="align-items:center">
+    <div><b>{{ w['amount']|money }}</b> to <b>{{ w['upi_id'] }}</b><br>
+      <span class="mut">{{ w['name'] }} ({{ w['username'] }}) &middot; {{ w['created_at'] }}</span></div>
+    <div><span class="pill {{ w['status'] }}">{{ w['status'] }}</span> {{ w['note'] }}</div>
+  </div>
+  {% if w['status'] == 'pending' %}
+  <form method="post" action="{{ url_for('admin_withdrawals', show=show) }}" style="margin-top:10px">
+    {{ csrf() }}<input type="hidden" name="id" value="{{ w['id'] }}">
+    <div class="row"><input name="note" placeholder="Note / UTR number (optional)">
+    <button name="decision" value="paid" class="btn ok">Mark paid</button>
+    <button name="decision" value="rejected" class="btn bad">Reject &amp; refund</button></div>
+  </form>
+  {% endif %}
+</div>
+{% else %}
+<div class="card"><p class="mut">No withdrawals to show.</p></div>
+{% endfor %}
+{% endblock %}
+''',
+    'base.html': '''<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{% block title %}{{ site_name }}{% endblock %}</title>
+<link rel="stylesheet" href="{{ url_for('css') }}">
+</head>
+<body>
+<div class="nav">
+  <a class="brand" href="/">{{ site_name }}</a>
+  {% if me and not me['is_admin'] %}
+    <a class="l" href="{{ url_for('dashboard') }}">Dashboard</a>
+    {% for i in range(1,5) %}<a class="l" href="{{ url_for('work_tasks', cat=i) }}">{{ cat_names[i] }}</a>{% endfor %}
+    <a class="l" href="{{ url_for('wallet') }}">Wallet</a>
+  {% elif me and me['is_admin'] %}
+    <a class="l" href="{{ url_for('admin_home') }}">Admin Home</a>
+    <a class="l" href="{{ url_for('admin_users') }}">Users</a>
+    <a class="l" href="{{ url_for('admin_tasks') }}">Tasks</a>
+    <a class="l" href="{{ url_for('admin_submissions') }}">Submissions</a>
+    <a class="l" href="{{ url_for('admin_withdrawals') }}">Withdrawals</a>
+    <a class="l" href="{{ url_for('admin_settings') }}">Settings</a>
+  {% endif %}
+  <span class="sp"></span>
+  {% if me %}
+    {% if not me['is_admin'] %}<span class="mut">{{ me['balance']|money }}</span>{% endif %}
+    <form method="post" action="{{ url_for('logout') }}">{{ csrf() }}<button class="btn sec sm">Logout ({{ me['username'] }})</button></form>
+  {% endif %}
+</div>
+<div class="wrap">
+  {% with msgs = get_flashed_messages(with_categories=true) %}
+    {% for cat, m in msgs %}<div class="flash {{ cat }}">{{ m }}</div>{% endfor %}
+  {% endwith %}
+  {% block body %}{% endblock %}
+</div>
+</body>
+</html>
+''',
+    'dashboard.html': '''{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block body %}
+<h1>Hi, {{ me['name'] }}</h1>
+<div class="grid">
+  <div class="card stat"><div class="n">{{ me['balance']|money }}</div><div class="t">Wallet balance</div></div>
+  <div class="card stat"><div class="n">{{ earned|money }}</div><div class="t">Total earned</div></div>
+  <a class="card stat work" href="{{ url_for('wallet') }}"><div class="n">Withdraw &rarr;</div><div class="t">Send money to your UPI</div></a>
+</div>
+
+<h2>Your work dashboards</h2>
+<div class="grid">
+  <a class="card work" href="{{ url_for('work_captcha') }}">
+    <div class="tt">{{ cat_names[1] }}</div><div class="mut">Solve captchas, instant credit</div><span class="bd">Always available</span>
+  </a>
+  {% for i in (2,3,4) %}
+  <a class="card work" href="{{ url_for('work_tasks', cat=i) }}">
+    <div class="tt">{{ cat_names[i] }}</div><div class="mut">Tasks assigned by admin</div><span class="bd">{{ stats[i] }} open</span>
+  </a>
+  {% endfor %}
+</div>
+
+<h2>Recent activity</h2>
+<div class="card">
+{% if txns %}
+<table><tr><th>When</th><th>Type</th><th>Note</th><th>Amount</th></tr>
+{% for t in txns %}<tr><td class="mut">{{ t['created_at'] }}</td><td>{{ t['kind'] }}</td><td>{{ t['note'] }}</td>
+<td class="{{ 'pos' if t['amount']>0 else 'neg' }}">{{ t['amount']|money }}</td></tr>{% endfor %}
+</table>
+{% else %}<p class="mut">No activity yet. Start with {{ cat_names[1] }}.</p>{% endif %}
+</div>
+{% endblock %}
+''',
+    'login.html': '''{% extends "base.html" %}
+{% block title %}Login{% endblock %}
+{% block body %}
+<div class="auth card">
+  <h1>Login</h1>
+  <form method="post">
+    {{ csrf() }}
+    <label>Username</label><input name="username" required autofocus autocomplete="username">
+    <label>Password</label><input name="password" type="password" required autocomplete="current-password">
+    <p><button>Login</button></p>
+  </form>
+  <p class="mut">New here? <a href="{{ url_for('register') }}">Create an account</a> (free, no fee).</p>
+</div>
+{% endblock %}
+''',
+    'register.html': '''{% extends "base.html" %}
+{% block title %}Sign up{% endblock %}
+{% block body %}
+<div class="auth card">
+  <h1>Create account</h1>
+  <form method="post">
+    {{ csrf() }}
+    <label>Full name</label><input name="name" required>
+    <label>Username</label><input name="username" required autocomplete="username">
+    <label>Password (min 6 characters)</label><input name="password" type="password" required autocomplete="new-password">
+    <label>UPI ID (optional, can add later)</label><input name="upi_id" placeholder="name@bank">
+    <p><button>Sign up</button></p>
+  </form>
+  <p class="mut">No deposit or joining fee is ever required. <a href="{{ url_for('login') }}">Back to login</a></p>
+</div>
+{% endblock %}
+''',
+    'task.html': '''{% extends "base.html" %}
+{% block title %}{{ t['title'] }}{% endblock %}
+{% block body %}
+<h1>{{ t['title'] }}</h1>
+<div class="card">
+  <p><b>Reward:</b> {{ t['reward']|money }}</p>
+  <pre>{{ t['description'] }}</pre>
+</div>
+<div class="card">
+  {% if existing %}
+    <p class="mut">You already submitted this task.</p>
+  {% else %}
+  <form method="post">
+    {{ csrf() }}
+    <label>Your answer / completed work</label>
+    <textarea name="answer" required maxlength="5000"></textarea>
+    <p><button>Submit for review</button></p>
+  </form>
+  {% endif %}
+  <p><a href="{{ url_for('work_tasks', cat=t['category']) }}">&larr; Back</a></p>
+</div>
+{% endblock %}
+''',
+    'wallet.html': '''{% extends "base.html" %}
+{% block title %}Wallet{% endblock %}
+{% block body %}
+<h1>Wallet</h1>
+<div class="grid">
+  <div class="card stat"><div class="n">{{ me['balance']|money }}</div><div class="t">Available balance</div></div>
+  <div class="card">
+    <b>Withdraw to UPI</b>
+    <form method="post">
+      {{ csrf() }}
+      <label>Amount (min {{ min_wd|money }})</label><input name="amount" type="number" step="0.01" min="1" required>
+      <label>UPI ID</label><input name="upi_id" value="{{ me['upi_id'] }}" placeholder="name@bank" required>
+      <p><button>Request withdrawal</button></p>
+    </form>
+  </div>
+</div>
+
+<h2>Withdrawal requests</h2>
+<div class="card">
+{% if wds %}
+<table><tr><th>When</th><th>Amount</th><th>UPI</th><th>Status</th><th>Note</th></tr>
+{% for w in wds %}<tr><td class="mut">{{ w['created_at'] }}</td><td>{{ w['amount']|money }}</td><td>{{ w['upi_id'] }}</td>
+<td><span class="pill {{ w['status'] }}">{{ w['status'] }}</span></td><td>{{ w['note'] }}</td></tr>{% endfor %}
+</table>
+{% else %}<p class="mut">No withdrawals yet.</p>{% endif %}
+</div>
+
+<h2>Transaction history</h2>
+<div class="card">
+{% if txns %}
+<table><tr><th>When</th><th>Type</th><th>Note</th><th>Amount</th></tr>
+{% for t in txns %}<tr><td class="mut">{{ t['created_at'] }}</td><td>{{ t['kind'] }}</td><td>{{ t['note'] }}</td>
+<td class="{{ 'pos' if t['amount']>0 else 'neg' }}">{{ t['amount']|money }}</td></tr>{% endfor %}
+</table>
+{% else %}<p class="mut">No transactions yet.</p>{% endif %}
+</div>
+{% endblock %}
+''',
+    'work_captcha.html': '''{% extends "base.html" %}
+{% block title %}{{ cat_names[1] }}{% endblock %}
+{% block body %}
+<h1>{{ cat_names[1] }}</h1>
+<div class="card">
+  <p>Type the characters you see. Each correct answer pays <b>{{ rate|money }}</b>.
+     Today: <b>{{ done }}</b> / {{ limit }} solved.</p>
+  {% if done >= limit %}
+    <p class="mut">Daily limit reached. Come back tomorrow.</p>
+  {% else %}
+  <form method="post" autocomplete="off">
+    {{ csrf() }}
+    <div class="cap">
+      <img src="{{ url_for('captcha_png') }}?t={{ range(1, 10**9)|random }}" alt="captcha" width="200" height="70">
+      <a href="{{ url_for('work_captcha') }}">Refresh</a>
+    </div>
+    <div class="row"><input name="answer" maxlength="8" required autofocus placeholder="Enter captcha"><button>Submit</button></div>
+  </form>
+  {% endif %}
+</div>
+{% endblock %}
+''',
+    'work_tasks.html': '''{% extends "base.html" %}
+{% block title %}{{ cat_names[cat] }}{% endblock %}
+{% block body %}
+<h1>{{ cat_names[cat] }}</h1>
+<h2>Open tasks</h2>
+<div class="card">
+{% if tasks %}
+<table><tr><th>Task</th><th>Reward</th><th></th></tr>
+{% for t in tasks %}<tr><td><b>{{ t['title'] }}</b>{% if t['assigned_to'] %} <span class="pill approved">for you</span>{% endif %}</td>
+<td>{{ t['reward']|money }}</td><td><a class="btn sm" href="{{ url_for('task_view', task_id=t['id']) }}">Open</a></td></tr>{% endfor %}
+</table>
+{% else %}<p class="mut">No open tasks right now. Admin will assign new work soon.</p>{% endif %}
+</div>
+
+<h2>My submissions</h2>
+<div class="card">
+{% if subs %}
+<table><tr><th>Task</th><th>Reward</th><th>Status</th><th>When</th></tr>
+{% for s in subs %}<tr><td>{{ s['title'] }}</td><td>{{ s['reward']|money }}</td>
+<td><span class="pill {{ s['status'] }}">{{ s['status'] }}</span></td><td class="mut">{{ s['created_at'] }}</td></tr>{% endfor %}
+</table>
+{% else %}<p class="mut">Nothing submitted yet.</p>{% endif %}
+</div>
+{% endblock %}
+''',
+}
+
+CSS = ''':root{--bg:#0f172a;--card:#1e293b;--line:#334155;--text:#e2e8f0;--mut:#94a3b8;--acc:#6366f1;--ok:#22c55e;--err:#ef4444;--warn:#f59e0b}
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--text);line-height:1.5}
+a{color:#a5b4fc;text-decoration:none}a:hover{text-decoration:underline}
+.nav{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:12px 18px;background:#0b1220;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+.nav .brand{font-weight:700;font-size:18px;color:#fff;margin-right:14px}
+.nav a.l{padding:6px 10px;border-radius:8px;color:var(--text)}.nav a.l:hover{background:var(--card);text-decoration:none}
+.nav .sp{flex:1}.nav form{margin:0}
+.wrap{max-width:1000px;margin:0 auto;padding:20px 16px 60px}
+h1{font-size:24px;margin:6px 0 16px}h2{font-size:18px;margin:26px 0 10px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:16px}
+.grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(210px,1fr))}
+.stat .n{font-size:26px;font-weight:700}.stat .t{color:var(--mut);font-size:13px}
+.work{display:block;color:var(--text)}.work:hover{border-color:var(--acc);text-decoration:none}
+.work .tt{font-weight:600;font-size:17px}.work .bd{margin-top:8px;display:inline-block;background:#312e81;color:#c7d2fe;padding:2px 10px;border-radius:999px;font-size:12px}
+label{display:block;font-size:13px;color:var(--mut);margin:12px 0 4px}
+input,select,textarea{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:#0f172a;color:var(--text);font:inherit}
+textarea{min-height:120px}
+button,.btn{background:var(--acc);color:#fff;border:0;border-radius:10px;padding:10px 18px;font:inherit;font-weight:600;cursor:pointer;display:inline-block}
+button:hover,.btn:hover{filter:brightness(1.1);text-decoration:none}
+.btn.sec{background:#334155}.btn.ok{background:#16a34a}.btn.bad{background:#dc2626}.btn.sm{padding:5px 12px;font-size:13px}
+table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--line);vertical-align:top}th{color:var(--mut);font-weight:600;font-size:12px;text-transform:uppercase}
+.flash{padding:10px 14px;border-radius:10px;margin-bottom:12px}.flash.ok{background:#14532d;color:#bbf7d0}.flash.error{background:#7f1d1d;color:#fecaca}
+.pill{padding:2px 9px;border-radius:999px;font-size:12px;font-weight:600}
+.pill.pending{background:#78350f;color:#fde68a}.pill.approved,.pill.paid{background:#14532d;color:#bbf7d0}.pill.rejected{background:#7f1d1d;color:#fecaca}
+.pos{color:var(--ok)}.neg{color:var(--err)}.mut{color:var(--mut)}
+.auth{max-width:400px;margin:60px auto}
+.cap{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:10px 0}.cap img{border-radius:8px;border:1px solid var(--line)}
+.row{display:flex;gap:10px;flex-wrap:wrap}.row>*{flex:1;min-width:140px}
+pre{white-space:pre-wrap;word-break:break-word;background:#0f172a;border-radius:8px;padding:10px;margin:0;font:inherit}
+@media(max-width:600px){th:nth-child(n+5),td:nth-child(n+5){font-size:12px}}
+'''
+
+from jinja2 import DictLoader
+app.jinja_env.loader = DictLoader(TEMPLATES)
+
+
+@app.route('/style.css')
+def css():
+    from flask import Response
+    r = Response(CSS, mimetype='text/css')
+    r.headers['Cache-Control'] = 'public, max-age=3600'
+    return r
 
 
 def _load_secret():
