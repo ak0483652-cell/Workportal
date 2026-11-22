@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Review submissions{% endblock %}
+{% block body %}
+<h1>Submissions to review</h1>
+{% for s in subs %}
+<div class="card">
+  <div class="row" style="align-items:center">
+    <div><b>{{ s['title'] }}</b><br><span class="mut">{{ cat_names[s['category']] }} &middot; by {{ s['username'] }} &middot; {{ s['created_at'] }}</span></div>
+    <div><b>Reward:</b> {{ s['reward']|money }}</div>
+  </div>
+  <p><pre>{{ s['answer'] }}</pre></p>
+  <div class="row" style="max-width:340px">
+    <form method="post">{{ csrf() }}<input type="hidden" name="id" value="{{ s['id'] }}"><input type="hidden" name="decision" value="approved"><button class="btn ok">Approve &amp; pay</button></form>
+    <form method="post">{{ csrf() }}<input type="hidden" name="id" value="{{ s['id'] }}"><input type="hidden" name="decision" value="rejected"><button class="btn bad">Reject</button></form>
+  </div>
+</div>
+{% else %}
+<div class="card"><p class="mut">Nothing pending. All caught up.</p></div>
+{% endfor %}
+{% endblock %}

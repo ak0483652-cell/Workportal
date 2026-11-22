@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{% block title %}{{ site_name }}{% endblock %}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<div class="nav">
+  <a class="brand" href="/">{{ site_name }}</a>
+  {% if me and not me['is_admin'] %}
+    <a class="l" href="{{ url_for('dashboard') }}">Dashboard</a>
+    {% for i in range(1,5) %}<a class="l" href="{{ url_for('work_tasks', cat=i) }}">{{ cat_names[i] }}</a>{% endfor %}
+    <a class="l" href="{{ url_for('wallet') }}">Wallet</a>
+  {% elif me and me['is_admin'] %}
+    <a class="l" href="{{ url_for('admin_home') }}">Admin Home</a>
+    <a class="l" href="{{ url_for('admin_users') }}">Users</a>
+    <a class="l" href="{{ url_for('admin_tasks') }}">Tasks</a>
+    <a class="l" href="{{ url_for('admin_submissions') }}">Submissions</a>
+    <a class="l" href="{{ url_for('admin_withdrawals') }}">Withdrawals</a>
+    <a class="l" href="{{ url_for('admin_settings') }}">Settings</a>
+  {% endif %}
+  <span class="sp"></span>
+  {% if me %}
+    {% if not me['is_admin'] %}<span class="mut">{{ me['balance']|money }}</span>{% endif %}
+    <form method="post" action="{{ url_for('logout') }}">{{ csrf() }}<button class="btn sec sm">Logout ({{ me['username'] }})</button></form>
+  {% endif %}
+</div>
+<div class="wrap">
+  {% with msgs = get_flashed_messages(with_categories=true) %}
+    {% for cat, m in msgs %}<div class="flash {{ cat }}">{{ m }}</div>{% endfor %}
+  {% endwith %}
+  {% block body %}{% endblock %}
+</div>
+</body>
+</html>

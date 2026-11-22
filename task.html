@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}{{ t['title'] }}{% endblock %}
+{% block body %}
+<h1>{{ t['title'] }}</h1>
+<div class="card">
+  <p><b>Reward:</b> {{ t['reward']|money }}</p>
+  <pre>{{ t['description'] }}</pre>
+</div>
+<div class="card">
+  {% if existing %}
+    <p class="mut">You already submitted this task.</p>
+  {% else %}
+  <form method="post">
+    {{ csrf() }}
+    <label>Your answer / completed work</label>
+    <textarea name="answer" required maxlength="5000"></textarea>
+    <p><button>Submit for review</button></p>
+  </form>
+  {% endif %}
+  <p><a href="{{ url_for('work_tasks', cat=t['category']) }}">&larr; Back</a></p>
+</div>
+{% endblock %}
