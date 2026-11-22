@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block body %}
+<h1>Settings</h1>
+<div class="card">
+<form method="post">{{ csrf() }}
+  <label>Site name</label><input name="site_name" value="{{ vals.site_name }}">
+  <div class="row">
+    <div><label>Work 1 name</label><input name="cat1_name" value="{{ vals.cat1_name }}"></div>
+    <div><label>Work 2 name</label><input name="cat2_name" value="{{ vals.cat2_name }}"></div>
+    <div><label>Work 3 name</label><input name="cat3_name" value="{{ vals.cat3_name }}"></div>
+    <div><label>Work 4 name</label><input name="cat4_name" value="{{ vals.cat4_name }}"></div>
+  </div>
+  <div class="row">
+    <div><label>Pay per correct captcha (₹)</label><input name="captcha_rate" type="number" step="0.01" min="0" value="{{ vals.captcha_rate }}"></div>
+    <div><label>Max captchas per user per day</label><input name="captcha_daily_limit" type="number" min="0" value="{{ vals.captcha_daily_limit }}"></div>
+    <div><label>Minimum withdrawal (₹)</label><input name="min_withdrawal" type="number" step="1" min="1" value="{{ vals.min_withdrawal }}"></div>
+  </div>
+  <p><button>Save settings</button></p>
+</form>
+</div>
+{% endblock %}

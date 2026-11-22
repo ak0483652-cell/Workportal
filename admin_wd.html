@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Withdrawals{% endblock %}
+{% block body %}
+<h1>Withdrawals</h1>
+<p><a class="btn sm {{ '' if show=='pending' else 'sec' }}" href="?show=pending">Pending</a>
+   <a class="btn sm {{ '' if show=='all' else 'sec' }}" href="?show=all">All</a></p>
+<p class="mut">Pay the UPI ID shown from your own UPI app first, then click "Mark paid". "Reject" refunds the amount to the user's wallet.</p>
+{% for w in wds %}
+<div class="card">
+  <div class="row" style="align-items:center">
+    <div><b>{{ w['amount']|money }}</b> to <b>{{ w['upi_id'] }}</b><br>
+      <span class="mut">{{ w['name'] }} ({{ w['username'] }}) &middot; {{ w['created_at'] }}</span></div>
+    <div><span class="pill {{ w['status'] }}">{{ w['status'] }}</span> {{ w['note'] }}</div>
+  </div>
+  {% if w['status'] == 'pending' %}
+  <form method="post" action="{{ url_for('admin_withdrawals', show=show) }}" style="margin-top:10px">
+    {{ csrf() }}<input type="hidden" name="id" value="{{ w['id'] }}">
+    <div class="row"><input name="note" placeholder="Note / UTR number (optional)">
+    <button name="decision" value="paid" class="btn ok">Mark paid</button>
+    <button name="decision" value="rejected" class="btn bad">Reject &amp; refund</button></div>
+  </form>
+  {% endif %}
+</div>
+{% else %}
+<div class="card"><p class="mut">No withdrawals to show.</p></div>
+{% endfor %}
+{% endblock %}

@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block body %}
+<h1>Hi, {{ me['name'] }}</h1>
+<div class="grid">
+  <div class="card stat"><div class="n">{{ me['balance']|money }}</div><div class="t">Wallet balance</div></div>
+  <div class="card stat"><div class="n">{{ earned|money }}</div><div class="t">Total earned</div></div>
+  <a class="card stat work" href="{{ url_for('wallet') }}"><div class="n">Withdraw &rarr;</div><div class="t">Send money to your UPI</div></a>
+</div>
+
+<h2>Your work dashboards</h2>
+<div class="grid">
+  <a class="card work" href="{{ url_for('work_captcha') }}">
+    <div class="tt">{{ cat_names[1] }}</div><div class="mut">Solve captchas, instant credit</div><span class="bd">Always available</span>
+  </a>
+  {% for i in (2,3,4) %}
+  <a class="card work" href="{{ url_for('work_tasks', cat=i) }}">
+    <div class="tt">{{ cat_names[i] }}</div><div class="mut">Tasks assigned by admin</div><span class="bd">{{ stats[i] }} open</span>
+  </a>
+  {% endfor %}
+</div>
+
+<h2>Recent activity</h2>
+<div class="card">
+{% if txns %}
+<table><tr><th>When</th><th>Type</th><th>Note</th><th>Amount</th></tr>
+{% for t in txns %}<tr><td class="mut">{{ t['created_at'] }}</td><td>{{ t['kind'] }}</td><td>{{ t['note'] }}</td>
+<td class="{{ 'pos' if t['amount']>0 else 'neg' }}">{{ t['amount']|money }}</td></tr>{% endfor %}
+</table>
+{% else %}<p class="mut">No activity yet. Start with {{ cat_names[1] }}.</p>{% endif %}
+</div>
+{% endblock %}

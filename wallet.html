@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Wallet{% endblock %}
+{% block body %}
+<h1>Wallet</h1>
+<div class="grid">
+  <div class="card stat"><div class="n">{{ me['balance']|money }}</div><div class="t">Available balance</div></div>
+  <div class="card">
+    <b>Withdraw to UPI</b>
+    <form method="post">
+      {{ csrf() }}
+      <label>Amount (min {{ min_wd|money }})</label><input name="amount" type="number" step="0.01" min="1" required>
+      <label>UPI ID</label><input name="upi_id" value="{{ me['upi_id'] }}" placeholder="name@bank" required>
+      <p><button>Request withdrawal</button></p>
+    </form>
+  </div>
+</div>
+
+<h2>Withdrawal requests</h2>
+<div class="card">
+{% if wds %}
+<table><tr><th>When</th><th>Amount</th><th>UPI</th><th>Status</th><th>Note</th></tr>
+{% for w in wds %}<tr><td class="mut">{{ w['created_at'] }}</td><td>{{ w['amount']|money }}</td><td>{{ w['upi_id'] }}</td>
+<td><span class="pill {{ w['status'] }}">{{ w['status'] }}</span></td><td>{{ w['note'] }}</td></tr>{% endfor %}
+</table>
+{% else %}<p class="mut">No withdrawals yet.</p>{% endif %}
+</div>
+
+<h2>Transaction history</h2>
+<div class="card">
+{% if txns %}
+<table><tr><th>When</th><th>Type</th><th>Note</th><th>Amount</th></tr>
+{% for t in txns %}<tr><td class="mut">{{ t['created_at'] }}</td><td>{{ t['kind'] }}</td><td>{{ t['note'] }}</td>
+<td class="{{ 'pos' if t['amount']>0 else 'neg' }}">{{ t['amount']|money }}</td></tr>{% endfor %}
+</table>
+{% else %}<p class="mut">No transactions yet.</p>{% endif %}
+</div>
+{% endblock %}

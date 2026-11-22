@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}{{ cat_names[1] }}{% endblock %}
+{% block body %}
+<h1>{{ cat_names[1] }}</h1>
+<div class="card">
+  <p>Type the characters you see. Each correct answer pays <b>{{ rate|money }}</b>.
+     Today: <b>{{ done }}</b> / {{ limit }} solved.</p>
+  {% if done >= limit %}
+    <p class="mut">Daily limit reached. Come back tomorrow.</p>
+  {% else %}
+  <form method="post" autocomplete="off">
+    {{ csrf() }}
+    <div class="cap">
+      <img src="{{ url_for('captcha_png') }}?t={{ range(1, 10**9)|random }}" alt="captcha" width="200" height="70">
+      <a href="{{ url_for('work_captcha') }}">Refresh</a>
+    </div>
+    <div class="row"><input name="answer" maxlength="8" required autofocus placeholder="Enter captcha"><button>Submit</button></div>
+  </form>
+  {% endif %}
+</div>
+{% endblock %}

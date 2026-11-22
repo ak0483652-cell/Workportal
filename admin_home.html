@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Admin{% endblock %}
+{% block body %}
+<h1>Admin panel</h1>
+<div class="grid">
+  <div class="card stat"><div class="n">{{ stats.users }}</div><div class="t">Users</div></div>
+  <div class="card stat"><div class="n">{{ stats.balance|money }}</div><div class="t">Total user balances (you owe)</div></div>
+  <a class="card stat work" href="{{ url_for('admin_submissions') }}"><div class="n">{{ stats.pending_subs }}</div><div class="t">Submissions to review</div></a>
+  <a class="card stat work" href="{{ url_for('admin_withdrawals') }}"><div class="n">{{ stats.pending_wd }} ({{ stats.pending_wd_amt|money }})</div><div class="t">Pending withdrawals</div></a>
+  <div class="card stat"><div class="n">{{ stats.paid|money }}</div><div class="t">Total paid out</div></div>
+</div>
+<h2>Quick actions</h2>
+<div class="row">
+  <a class="btn" href="{{ url_for('admin_tasks') }}">Create / assign work</a>
+  <a class="btn sec" href="{{ url_for('admin_users') }}">Manage users</a>
+  <a class="btn sec" href="{{ url_for('admin_settings') }}">Rates &amp; names</a>
+</div>
+{% endblock %}
